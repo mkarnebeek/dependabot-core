@@ -1642,6 +1642,25 @@ RSpec.describe Dependabot::NpmAndYarn::FileUpdater::NpmLockfileUpdater do
             end
           end
 
+          context "when one .npmrc has a numeric gate and another has a non-numeric gate" do
+            let(:files) do
+              project_dependency_files("npm8/simple") +
+                [
+                  Dependabot::DependencyFile.new(name: ".npmrc", content: "min-release-age=3"),
+                  Dependabot::DependencyFile.new(name: "packages/app/.npmrc", content: "min-release-age=soon")
+                ]
+            end
+
+            it "treats the gate as unreadable and never overrides it with the cooldown" do
+              expect(Dependabot::NpmAndYarn::Helpers).to receive(:run_npm_command) do |command, _options|
+                expect(command).not_to include("--min-release-age")
+                ""
+              end
+
+              updater.send(:run_npm_install_lockfile_only, install_args)
+            end
+          end
+
           context "when the cooldown is longer than the user's gate" do
             let(:files) do
               project_dependency_files("npm8/simple") +

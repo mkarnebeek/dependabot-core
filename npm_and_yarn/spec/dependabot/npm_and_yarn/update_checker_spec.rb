@@ -2553,6 +2553,31 @@ RSpec.describe Dependabot::NpmAndYarn::UpdateChecker do
       end
     end
 
+    context "when one .npmrc has a numeric value and another has a non-numeric value" do
+      let(:dependency_files) do
+        project_dependency_files("npm6/npmrc_min_release_age").reject { |f| f.name == ".npmrc" } +
+          npmrc_files
+      end
+      let(:npmrc_files) do
+        [
+          Dependabot::DependencyFile.new(name: ".npmrc", content: "min-release-age=30\n"),
+          Dependabot::DependencyFile.new(name: "packages/app/.npmrc", content: "min-release-age=soon\n")
+        ]
+      end
+
+      it "keeps the numeric gate instead of discarding it" do
+        expect(checker.update_cooldown.default_days).to eq(30)
+      end
+
+      context "when the non-numeric file comes first" do
+        let(:npmrc_files) { super().reverse }
+
+        it "keeps the numeric gate" do
+          expect(checker.update_cooldown.default_days).to eq(30)
+        end
+      end
+    end
+
     context "when .npmrc does not set min-release-age" do
       let(:dependency_files) do
         project_dependency_files("npm6/npmrc_min_release_age").reject { |f| f.name == ".npmrc" } +

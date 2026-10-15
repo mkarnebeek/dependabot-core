@@ -674,23 +674,32 @@ module Dependabot
         Helpers::ReleaseAgeGateSetting.new(filename: ".npmrc", key: "min-release-age", separator: "=")
       private_constant :NPMRC_MIN_RELEASE_AGE_SETTING
 
-      # Uses the same resolution as the lockfile updater (the last matching line in each
-      # .npmrc wins, and the largest value across files is kept), so the version chosen
-      # here is never younger than the gate npm enforces.
+      # Resolves each .npmrc with the same parsing as the lockfile updater (the last matching
+      # line wins) and keeps the largest numeric value across files, so the version chosen
+      # here is never younger than a gate npm can enforce. A non-numeric value only discards
+      # that file's gate: it must not hide a numeric gate set in another file. (The updater
+      # instead treats such a value as an unreadable gate it must never override.)
       sig { returns(T.nilable(Integer)) }
       def npmrc_min_release_age_days
-        configured = Helpers.max_configured_release_age(dependency_files, [NPMRC_MIN_RELEASE_AGE_SETTING])
+        npmrc_files = dependency_files.select { |file| File.basename(file.name) == ".npmrc" }
+        configured = npmrc_files.filter_map { |file| numeric_min_release_age(file) }.max
+
         if configured.nil?
-          Dependabot.logger.debug("No min-release-age key found in any .npmrc file.")
-          return nil
-        end
-        if configured.is_a?(Float)
-          Dependabot.logger.debug("Ignoring non-numeric min-release-age value in .npmrc.")
+          Dependabot.logger.debug("No numeric min-release-age found in any .npmrc file.")
           return nil
         end
 
         Dependabot.logger.debug("Found min-release-age=#{configured} days in .npmrc.")
         configured
+      end
+
+      sig { params(npmrc: Dependabot::DependencyFile).returns(T.nilable(Integer)) }
+      def numeric_min_release_age(npmrc)
+        value = Helpers.max_configured_release_age([npmrc], [NPMRC_MIN_RELEASE_AGE_SETTING])
+        return value if value.is_a?(Integer)
+
+        Dependabot.logger.debug("Ignoring non-numeric min-release-age value in #{npmrc.name}.") if value
+        nil
       end
 
       sig { returns(T.nilable(Dependabot::DependencyFile)) }
