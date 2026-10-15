@@ -2553,6 +2553,44 @@ RSpec.describe Dependabot::NpmAndYarn::UpdateChecker do
       end
     end
 
+    context "when .npmrc does not set min-release-age" do
+      let(:dependency_files) do
+        project_dependency_files("npm6/npmrc_min_release_age").reject { |f| f.name == ".npmrc" } +
+          [Dependabot::DependencyFile.new(name: ".npmrc", content: "registry=https://registry.npmjs.org/\n")]
+      end
+
+      it "does not apply a cooldown" do
+        expect(checker.update_cooldown).to be_nil
+      end
+    end
+
+    context "when min-release-age is explicitly 0" do
+      let(:dependency_files) do
+        project_dependency_files("npm6/npmrc_min_release_age").reject { |f| f.name == ".npmrc" } +
+          [Dependabot::DependencyFile.new(name: ".npmrc", content: "min-release-age=0\n")]
+      end
+
+      it "does not apply a cooldown" do
+        expect(checker.update_cooldown).to be_nil
+      end
+
+      context "when a dependabot.yml cooldown is also set" do
+        let(:checker) do
+          described_class.new(
+            dependency: dependency,
+            dependency_files: dependency_files,
+            credentials: credentials,
+            update_cooldown: Dependabot::Package::ReleaseCooldownOptions.new(default_days: 5),
+            options: options
+          )
+        end
+
+        it "keeps the dependabot.yml cooldown unchanged" do
+          expect(checker.update_cooldown.default_days).to eq(5)
+        end
+      end
+    end
+
     context "when this is a security update" do
       let(:security_advisories) do
         [

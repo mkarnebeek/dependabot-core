@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "dependabot/npm_and_yarn"
 require "dependabot/npm_and_yarn/helpers"
 require "dependabot/npm_and_yarn/native_helpers"
 
@@ -177,6 +178,49 @@ RSpec.describe Dependabot::NpmAndYarn::NativeHelpers do
         end
 
         described_class.run_npm_audit_fix_command
+      end
+    end
+  end
+
+  # Runs the real commands so that a flag the installed npm rejects (npm 12 throws on unknown or
+  # abbreviated flags) is caught. `npm audit fix` exits non-zero when vulnerabilities remain, which is fine here.
+  describe "flags accepted by the installed npm" do
+    let(:rejected_flag_error) { /EUNKNOWNCONFIG|Unknown cli flag|Unknown cli config/ }
+
+    around do |example|
+      fixture_files = project_dependency_files("npm8/subdependency_update")
+
+      Dependabot::SharedHelpers.in_a_temporary_directory do
+        fixture_files.each do |file|
+          FileUtils.mkdir_p(File.dirname(file.name))
+          File.write(file.name, file.content)
+        end
+        example.run
+      end
+    end
+
+    def command_error
+      yield
+      nil
+    rescue Dependabot::SharedHelpers::HelperSubprocessFailed => e
+      e.message
+    end
+
+    it "accepts the flags used by the subdependency update, with and without a release-age gate" do
+      [nil, "--min-release-age=0", "--min-release-age=7"].each do |gate|
+        error = command_error do
+          described_class.run_npm8_subdependency_update_command(["acorn"], min_release_age_arg: gate)
+        end
+
+        expect(error).not_to match(rejected_flag_error)
+      end
+    end
+
+    it "accepts the flags used by the audit fix fallback, with and without a release-age gate" do
+      [nil, "--min-release-age=0", "--min-release-age=7"].each do |gate|
+        error = command_error { described_class.run_npm_audit_fix_command(min_release_age_arg: gate) }
+
+        expect(error).not_to match(rejected_flag_error)
       end
     end
   end
